@@ -8,7 +8,7 @@
 
 // const int buttonPins[12] = {36, 13, 12, 14, 26, 27, 25, 32, 33, 35, 34, 39};  // Starting from C
 //const int buttonPins[12] =  {27, 25, 32, 33, 35, 34, 39, 36, 13, 12, 14, 26};  // Starting from F
-const int buttonPins[12] = {13, 12, 14, 26, 27, 25, 32, 33, 35, 34, 39, 36};  // Starting from C#
+const int buttonPins[12] = {13, 12, 14, 27, 26, 25, 32, 33, 35, 34, 39, 36};  // Starting from C#
 
 
 // const int buttonPins[12] = {36, 39, 34, 35, 32, 33, 25, 26, 27, 14, 12, 13};  // the number of the pushbutton pin
