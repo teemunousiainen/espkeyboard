@@ -20,31 +20,33 @@ void noteOn(int cmd, int pitch, int velocity, int i, int j);
 class MCP23017Keyboard
 {
   private:
-  int key_states[4][12];
-  unsigned long key_change_ts[4][12];
+  int key_states[4][16];
+  unsigned long key_change_ts[4][16];
   int key_state = 0;  
-  int keyb_map[12];
+  int keyb_map[16];
   int *pin_map;
   int octaves;
+  int keys;
   int lowest_key;
   int address;
   MCP23017 *mcp;
   int output_pins[4];
-  int note_map[12];
+  int note_map[16];
   int midi_channel;
 
   public:
 
-  MCP23017Keyboard(MCP23017 *mcp, int address, int octaves, int lowest_key, int *pin_map, int midi_channel);
+  MCP23017Keyboard(MCP23017 *mcp, int address, int octaves, int keys, int lowest_key, int *pin_map, int midi_channel);
   void Init(void);
   void poll_status(void);
 };
 
-MCP23017Keyboard::MCP23017Keyboard(MCP23017 *mcp, int address, int octaves, int lowest_key, int *pin_map, int midi_channel) 
+MCP23017Keyboard::MCP23017Keyboard(MCP23017 *mcp, int address, int octaves, int keys, int lowest_key, int *pin_map, int midi_channel) 
 {
   this->mcp = mcp;
   this->address = address;
   this->octaves = octaves;
+  this->keys = keys;
   this->lowest_key = lowest_key;
   this->pin_map = pin_map;
   this->midi_channel = midi_channel;
@@ -58,13 +60,35 @@ void MCP23017Keyboard::Init(void)
 
   for (i = 0; i < 16; i++)
   {
-    if (this->pin_map[i] > 0)
-      this->note_map[this->pin_map[i]] = i;
+    if (this->pin_map[i] >= 0)
+    {
+      if (this->pin_map[i] != 999)
+        this->note_map[this->pin_map[i]] = i;
+    }
+    else
+      this->output_pins[-this->pin_map[i] - 1] = i;
   }
+
+  Serial.print("Note map: ");
+  for (i = 0; i < this->keys; i++) 
+  {
+    Serial.print(this->note_map[i]);
+    Serial.print(" ");
+  }
+  Serial.println();
+
+  Serial.print("Output pins: ");
+  for (i = 0; i < this->octaves; i++) 
+  {
+    Serial.print(this->output_pins[i]);
+    Serial.print(" ");
+  }
+  Serial.println();
+
 
   for (j = 0; j < 4; j++) 
   {
-    for (i = 0; i < 12; i++) 
+    for (i = 0; i < this->keys; i++) 
     {
       this->key_states[j][i] = 0;
       this->key_change_ts[j][i] = current_ts;
@@ -79,6 +103,8 @@ void MCP23017Keyboard::Init(void)
     else
       this->output_pins[1 - pin_map[i]] = i;
   }
+  Serial.print("PORT A Input mask: ");
+  Serial.println(input, BIN);
   this->mcp->iodir(MCP23017_PORTA, input, this->address);
 
   input = 0;
@@ -89,6 +115,8 @@ void MCP23017Keyboard::Init(void)
     else
       this->output_pins[-pin_map[i + 8]] = i + 8;
   }
+  Serial.print("PORT B Input mask: ");
+  Serial.println(input, BIN);
   this->mcp->iodir(MCP23017_PORTB, input, address);
   this->mcp->write_gpio(MCP23017_PORTA, 0x00, this->address);
   this->mcp->write_gpio(MCP23017_PORTB, 0x00, this->address);
@@ -109,10 +137,13 @@ void MCP23017Keyboard::poll_status(void)
     else
       mcp1.write_gpio(MCP23017_PORTB, 0x1 << (this->output_pins[j] - 8), this->address);
     delay(10);
+//    Serial.println(0x1 << this->output_pins[j]);
+
 
     value = mcp1.read_gpio(MCP23017_PORTA, this->address) | (mcp1.read_gpio(MCP23017_PORTB, this->address) << 8);
-    
-    for (int i = 0; i < 12; i++) {
+//    Serial.println(value);
+
+    for (int i = 0; i < this->keys; i++) {
       mask = 1 << this->note_map[i];
       if (value & mask) {
         key_state = 1;
@@ -125,8 +156,12 @@ void MCP23017Keyboard::poll_status(void)
       if ((key_states[j][i] == 0) && (key_state > 0) && (current_ts - key_change_ts[j][i] > time_threshold))
       {
         noteOn(0x90 + this->midi_channel, note, 0x45, i, j);
+        key_states[j][i] = key_state;
+        key_change_ts[j][i] = current_ts;
       } else if ((key_states[j][i] > 0) && (key_state == 0) && (current_ts - key_change_ts[j][i] > time_threshold)) {
         noteOn(0x90 + this->midi_channel, note, 0x00, i, j);
+        key_states[j][i] = key_state;
+        key_change_ts[j][i] = current_ts;
       }
     }
   }
@@ -137,18 +172,20 @@ void noteOn(int cmd, int pitch, int velocity, int i, int j)
   if (velocity == 0) 
   {
     Serial.print("Note ");
-    Serial.print(note);
+    Serial.print(pitch);
     Serial.print(" off");
+    Serial.println("");
   }
   else 
   {
     Serial.print("Note ");
-    Serial.print(note);
+    Serial.print(pitch);
     Serial.print(" on ");
     Serial.print(" ");
     Serial.print(i);
     Serial.print(" ");
     Serial.print(j);
+    Serial.println("");
   }
 /*  Serial.write(cmd);
   Serial.write(pitch);
@@ -159,11 +196,11 @@ MCP23017Keyboard *pedals;
 
 void setup() {
   Serial.begin(74880);
-  int pedal_pinmap[] = {-1, 0, 0, 4, 3, 2, 1, 0,   5,6,7,8,9,10,11 };
-  pedals = new MCP23017Keyboard(&mcp1, MCP23017_ADDRESS_22, 1, MIDI_NOTE_C2, pedal_pinmap, 0);
-  Serial.print("Initializing");
+  int pedal_pinmap[] = {-1, 999, 999, 0, 1, 2, 3, 4,   12,11,10,9,8,7,6,5};
+  pedals = new MCP23017Keyboard(&mcp1, MCP23017_ADDRESS_22, 1, 13, MIDI_NOTE_C2, pedal_pinmap, 0);
+  Serial.println("Initializing");
   pedals->Init();
-  Serial.print("OK!");
+  Serial.println("OK!");
 }
 
 void loop() {
